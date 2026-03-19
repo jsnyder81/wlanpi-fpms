@@ -28,6 +28,7 @@ import threading
 import time
 import tty
 import types
+import queue
 
 from PIL import Image, ImageDraw, ImageFont
 from gpiod.line import Bias, Edge
@@ -1068,29 +1069,32 @@ optional options:
 
     # Set signal handlers for button presses - these fire every time a button
     # is pressed
+    
+    event_queue = queue.Queue()
+    
     def up_key():
-        button_press(BUTTONS_PINS['up'], g_vars)
+        event_queue.put("UP")
 
     def down_key():
-        button_press(BUTTONS_PINS['down'], g_vars)
+        event_queue.put("DOWN")
 
     def left_key():
-        button_press(BUTTONS_PINS['left'], g_vars)
+        event_queue.put("LEFT")
 
     def right_key():
-        button_press(BUTTONS_PINS['right'], g_vars)
+        event_queue.put("RIGHT")
 
     def center_key():
-        button_press(BUTTONS_PINS['center'], g_vars)
+        event_queue.put("CENTER")
 
     def key_1():
-        button_press(BUTTONS_PINS['key1'], g_vars)
+        event_queue.put("KEY1")
 
     def key_2():
-        button_press(BUTTONS_PINS['key2'], g_vars)
+        event_queue.put("KEY2")
 
     def key_3():
-        button_press(BUTTONS_PINS['key3'], g_vars)
+        event_queue.put("KEY3")
 
     def monitor_buttons():
 
@@ -1280,19 +1284,106 @@ optional options:
     # is the case, based on testing with variable scopes and checking for process
     # IDs when different parts of the script are executing.
     ##############################################################################
+    
+    from .core.engine import FpmsEngine
+    engine = FpmsEngine(menu, g_vars['home_page_name'])
+    engine.is_home = g_vars['start_up']
+    
+    from .core.api import FpmsApiServer
+    api_server = FpmsApiServer(event_queue=event_queue, host='127.0.0.1', port=8080)
+    api_server.start()
+
     while running:
 
         try:
+            # Wait for event or timeout for background refresh
+            event = None
+            try:
+                # 2 second timeout mimics the old time.sleep(2) interval
+                event = event_queue.get(timeout=2.0)
+            except queue.Empty:
+                pass
 
             # check if eth0 link status has changed so we exit from screen save if needed
             check_eth()
 
-            if g_vars['shutdown_in_progress'] or g_vars['screen_cleared'] or g_vars['drawing_in_progress'] or g_vars['sig_fired']:
+            if g_vars['shutdown_in_progress'] or g_vars['drawing_in_progress'] or g_vars['sig_fired']:
 
                 # we don't really want to do anything at the moment, lets
                 # nap and loop around
-                time.sleep(2)
+                time.sleep(1)
                 continue
+
+            event_processed = False
+            
+            if event:
+                events_to_process = [event]
+                while not event_queue.empty():
+                    events_to_process.append(event_queue.get())
+                    
+                for ev in events_to_process:
+                    event_processed = True
+                    
+                    if g_vars['disable_keys']: continue
+                    
+                    g_vars['pageSleepCountdown'] = PAGE_SLEEP
+                    g_vars['start_up'] = False
+                    
+                    if g_vars['screen_cleared']:
+                        wakeup_screen()
+                        continue
+                        
+                    if g_vars['display_state'] == 'menu':
+                        if ev == "UP": engine.handle_up()
+                        elif ev == "DOWN": engine.handle_down()
+                        elif ev == "LEFT": engine.handle_left()
+                        elif ev == "RIGHT": engine.handle_right()
+                        elif ev == "CENTER": engine.handle_center()
+                        elif ev == "KEY1": engine.handle_key1()
+                        elif ev == "KEY2": engine.handle_key2()
+                        elif ev == "KEY3": engine.handle_key3()
+                        
+                        if engine.pending_action:
+                            selected_item = engine._get_current_menu_level()[engine.location[-1]]
+                            g_vars['option_selected'] = selected_item['action']
+                            g_vars['display_state'] = 'page'
+                            g_vars['result_cache'] = False
+                            engine.pending_action = ""
+                            # Broadcast action state
+                            api_server.broadcast_state(engine.get_state())
+                        else:
+                            g_vars['current_menu_location'] = list(engine.location)
+                            g_vars['option_selected'] = engine._get_current_menu_level()
+                            page_obj = Page(g_vars)
+                            new_state = engine.get_state()
+                            page_obj.draw_page(g_vars, new_state)
+                            api_server.broadcast_state(new_state)
+                    else:
+                        # Legacy fallback for PagedTable and Actions
+                        pin_map = {
+                            "UP": BUTTONS_PINS['up'],
+                            "DOWN": BUTTONS_PINS['down'],
+                            "LEFT": BUTTONS_PINS['left'],
+                            "RIGHT": BUTTONS_PINS['right'],
+                            "CENTER": BUTTONS_PINS['center'],
+                        }
+                        if 'key1' in BUTTONS_PINS: pin_map["KEY1"] = BUTTONS_PINS['key1']
+                        if 'key2' in BUTTONS_PINS: pin_map["KEY2"] = BUTTONS_PINS['key2']
+                        if 'key3' in BUTTONS_PINS: pin_map["KEY3"] = BUTTONS_PINS['key3']
+                        
+                        pin = pin_map.get(ev)
+                        if pin:
+                            g_vars['sig_fired'] = True
+                            button_press(pin, g_vars)
+                            g_vars['sig_fired'] = False
+                            
+                        # If legacy button_press backed us out to menu, sync engine
+                        if g_vars['display_state'] == 'menu':
+                            engine.location = list(g_vars['current_menu_location'])
+                            page_obj = Page(g_vars)
+                            new_state = engine.get_state()
+                            page_obj.draw_page(g_vars, new_state)
+                            api_server.broadcast_state(new_state)
 
             # Draw a menu or execute current action (dispatcher)
             if g_vars['display_state'] != 'menu':
@@ -1302,30 +1393,16 @@ optional options:
                 if g_vars['start_up'] == True:
                     g_vars['option_selected'] = home_page
 
-                # Re-run current action to refresh screen
-                #
-                # Handle when g_vars['option_selected'] does not return
-                #   a func but returns a list instead and fpms freezes.
-                #
-                # investigate by uncommenting these print statements
-                # and `tail -f /tmp/nanoled-python.log`:
-                # print(g_vars['option_selected'])
-                # print(type(g_vars['option_selected']))
-
                 if isinstance(g_vars['option_selected'], types.FunctionType):
                     g_vars['option_selected']()
 
             else:
-                # lets try drawing our page (or refresh if already painted)
-
-                # No point in repainting screen if we are on a
-                # menu page and no buttons pressed since last loop cycle
-                # In reality, this condition will rarely (if ever) be true
-                # as the page painting is driven from the key press which
-                # interrupts this flow anyhow. Left in as a safeguard
-                if g_vars['button_press_count'] > g_vars['last_button_press_count']:
+                # If no event was processed, only repaint on startup
+                if g_vars['start_up'] and not event_processed:
                     page_obj = Page(g_vars)
-                    page_obj.draw_page(g_vars, menu)
+                    new_state = engine.get_state()
+                    page_obj.draw_page(g_vars, new_state)
+                    api_server.broadcast_state(new_state)
 
             # if screen timeout is zero, clear it if not already done (blank the
             # display to reduce screenburn)
@@ -1333,17 +1410,14 @@ optional options:
                 sleep_screen()
 
             if g_vars['pageSleepCountdown'] > 0:
-                g_vars['pageSleepCountdown'] = g_vars['pageSleepCountdown'] - 1
-
-            # have a nap before we start our next loop
-            time.sleep(2)
+                g_vars['pageSleepCountdown'] -= 1
 
         except KeyboardInterrupt:
             break
         except IOError as ex:
             print("Error " + str(ex))
 
-        g_vars['last_button_press_count'] = g_vars['button_press_count']
+    api_server.stop()
 
     '''
     Discounted ideas

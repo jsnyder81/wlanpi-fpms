@@ -22,7 +22,7 @@ class Page(object):
         # grab a screeb obj
         self.display_obj = Display(g_vars)
 
-    def draw_page(self, g_vars, menu):
+    def draw_page(self, g_vars, state):
 
         # Drawing already in progress - return
         if g_vars['drawing_in_progress']:
@@ -31,79 +31,7 @@ class Page(object):
         # signal we are drawing
         g_vars['drawing_in_progress'] = True
 
-        ################################################
-        # show menu list based on current menu position
-        ################################################
-
-        # FIXME: This feels clunky. Would be best to access menu locations
-        #       via evaluated location rather than crawling over menu
-
-        menu_structure = menu
-        location_search = []
-        depth = 0
-        section_name = [g_vars['home_page_name']]
-
-        # Crawl the menu structure until we hit the current specified location
-        while g_vars['current_menu_location'] != location_search:
-
-            # List that will be used to build menu items to display
-            menu_list = []
-
-            # Current menu location choice specified in list format:
-            #  g_vars['current_menu_location'] = [2,1]
-            #
-            # As we move though menu depths, inpsect next level of
-            # menu structure
-            node = g_vars['current_menu_location'][depth]
-
-            # figure out the number of menu options at this menu level
-            number_menu_choices = len(menu_structure)
-
-            if node == number_menu_choices:
-
-                # we've fallen off the end of menu choices, fix item by zeroing
-                node = 0
-                g_vars['current_menu_location'][depth] = 0
-
-            location_search.append(node)
-
-            item_counter = 0
-
-            for menu_item in menu_structure:
-
-                item_name = menu_item['name']
-
-                # this is the currently selected item, pre-pend name with '*'
-                if (item_counter == node):
-                    section_name.append(item_name)
-                    item_name = "*" + item_name
-
-                # this item contains a list of options, append name with '>'
-                if (type(menu_item['action']) is list):
-                    if len(item_name) > 16:
-                        item_name = item_name[:14] + ".."
-                    item_name = item_name + ">"
-
-                menu_list.append((item_name))
-
-                item_counter = item_counter + 1
-
-            depth = depth + 1
-
-            # move down to next level of menu structure & repeat for new level
-            menu_structure = menu_structure[node]['action']
-
-        option_number_selected = node
-        g_vars['option_selected'] = menu_structure
-
-        # if we're at the top of the menu tree, show the home page title
-        if depth == 1:
-            page_name = g_vars['home_page_name']
-        else:
-            # otherwise show the name of the parent menu item
-            page_name = section_name[-2]
-
-        page_title = page_name.upper()
+        page_title = state.get("title", "").upper()
 
         # shorten title if necessary
         if len(page_title) > 15:
@@ -129,21 +57,30 @@ class Page(object):
         # define display window limit for menu table
         table_window = MAX_PAGE_LINES
 
+        menu_items = state.get("items", [])
+        option_number_selected = state.get("selected_index", 0)
+
         # determine the menu list to show based on current selection and window limits
-        if (len(menu_list) > table_window):
+        if (len(menu_items) > table_window):
 
             # We've got more items than we can fit in our window, need to slice to fit
             if (option_number_selected >= table_window):
-                menu_list = menu_list[(option_number_selected - (table_window - 1)): option_number_selected + 1]
+                menu_list = menu_items[(option_number_selected - (table_window - 1)): option_number_selected + 1]
+                render_selected_index = table_window - 1
             else:
                 # We have enough space for the menu items, so no special treatment required
-                menu_list = menu_list[0: table_window]
+                menu_list = menu_items[0: table_window]
+                render_selected_index = option_number_selected
+        else:
+            menu_list = menu_items
+            render_selected_index = option_number_selected
 
         # paint the menu items, highlighting selected menu item
-        for menu_item in menu_list:
+        for idx, item in enumerate(menu_list):
 
-            nav = False
-            sel = False
+            nav = item.get("has_children", False)
+            sel = (idx == render_selected_index)
+            menu_item_name = item.get("name", "")
 
             rect_fill = THEME.page_item_background.value
             text_fill = THEME.page_item_foreground.value
@@ -151,22 +88,20 @@ class Page(object):
             icon_fill = THEME.page_icon_foreground.value
             font_type = FONTB11
 
-            # this is a menu item that has more options: remove > character
-            if (menu_item[-1] == '>'):
-                nav = True
-                menu_item = menu_item[:-1]
+            # this is a menu item that has more options
+            if nav:
+                if len(menu_item_name) > 16:
+                    menu_item_name = menu_item_name[:14] + ".."
 
-            # this is selected menu item: highlight it and remove * character
-            if (menu_item[0] == '*'):
-                sel = True
+            # this is selected menu item: highlight it
+            if sel:
                 rect_fill = THEME.page_selected_item_background.value
                 text_fill = THEME.page_selected_item_foreground.value
                 nav_fill  = THEME.page_selected_item_foreground.value
                 icon_fill = THEME.page_selected_item_foreground.value
-                menu_item = menu_item[1:len(menu_item)]
 
             g_vars['draw'].rectangle((0, y, PAGE_WIDTH, y+y_offset), fill=rect_fill)
-            g_vars['draw'].text((12, y), menu_item,  font=font_type, fill=text_fill)
+            g_vars['draw'].text((12, y), menu_item_name,  font=font_type, fill=text_fill)
 
             if nav:
                 # draw list icon
