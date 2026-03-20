@@ -1,30 +1,26 @@
-import asyncio
 import json
-import websockets
+import socket
 
-async def test_api():
+def test_api():
     """
     A simple Python test client to verify the Headless API (Virtual Bridge).
     This fulfills the 'Testability' requirement of Phase 4.
     """
-    uri = "ws://127.0.0.1:8080"
+    host = "127.0.0.1"
+    port = 8080
     
-    print(f"Attempting to connect to {uri}...")
+    print(f"Attempting to connect to {host}:{port}...")
     try:
-        async with websockets.connect(uri) as websocket:
+        with socket.create_connection((host, port), timeout=5) as client_socket:
             print("Connected to FPMS API Server!")
             
-            # Depending on how the server is implemented, it might send the current state on connect
-            # initial_state = await websocket.recv()
-            # print(f"Initial State: {initial_state}")
-
             # Send a button press action
             payload = json.dumps({"action": "DOWN"})
             print(f"Sending payload: {payload}")
-            await websocket.send(payload)
+            client_socket.sendall(payload.encode('utf-8') + b'\n')
 
             # Wait for the updated state response
-            response = await websocket.recv()
+            response = client_socket.recv(4096).decode('utf-8').strip()
             print(f"Received updated state: {response}")
             
             # Verify it's valid JSON
@@ -36,4 +32,4 @@ async def test_api():
         print(f"Connection or test failed: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(test_api())
+    test_api()
