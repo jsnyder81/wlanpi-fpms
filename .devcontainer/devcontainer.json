@@ -1,7 +1,8 @@
 {
 	"name": "wlanpi-fpms-container",
 	"build": {
-		"dockerfile": "Containerfile"
+		"dockerfile": "Containerfile",
+		"context": ".."
 	},
 	"overrideCommand": false,
 	"privileged": true,
