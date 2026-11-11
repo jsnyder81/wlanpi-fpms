@@ -148,6 +148,10 @@ class Panel:
                 if not same_result:
                     self.client.clear_notice()
             self._page_index = page
+        elif self._view_key is not None:
+            self.scroll = (
+                0  # the connection went away: the local screen starts at the top
+            )
         self._view_key = key
         self._sync_editor()
         self._dirty.set()
@@ -205,6 +209,11 @@ class Panel:
             return
         if not client.connected or client.view is None:
             client.retry_now()
+            if key in ("up", "down"):
+                # The address list can be longer than the screen.
+                step = SCROLL_STEP if key == "down" else -SCROLL_STEP
+                self.scroll = max(0, min(self.scroll + step, self.max_scroll))
+                self._dirty.set()
             return
         view = client.view
         screen = view.get("screen")

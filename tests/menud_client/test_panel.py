@@ -953,6 +953,7 @@ def test_service_unavailable_screen_shows_the_ip_while_retrying(
             assert ImageColor.getrgb(render.LEVEL_COLOURS["error"]) in colours
             for key in ("down", "center"):  # nothing to send to
                 await rig.press(key)
+            assert panel.scroll == 0  # four rows: nothing to scroll either
 
             # The service comes up: the next retry attaches and the menu replaces the screen.
             await rig.server.start()
@@ -1093,5 +1094,27 @@ def test_unchanged_screen_is_not_redrawn(rig_factory):
             await rig.server.push(rig.server.view_frame())  # the same view again
             await rig.drawn()
             assert rig.screen.frames == frames
+
+    run(scenario())
+
+
+def test_unavailable_screen_scrolls_when_there_are_many_addresses(
+    rig_factory, monkeypatch
+):
+    many = [(f"eth{i}", f"192.0.2.{i}") for i in range(12)]
+    monkeypatch.setattr(netinfo, "ipv4_addresses", lambda: many)
+
+    async def scenario():
+        async with rig_factory(start_server=False) as rig:
+            panel = await rig.start_panel()
+            await until(lambda: panel.client.failures >= 1, what="first failure")
+            await rig.drawn()
+            assert panel.max_scroll > 0
+            await rig.press("down")
+            await rig.drawn()
+            assert panel.scroll == render.ROW_H * 3
+            await rig.press("up")
+            await rig.drawn()
+            assert panel.scroll == 0
 
     run(scenario())
