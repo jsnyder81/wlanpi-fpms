@@ -9,22 +9,29 @@ class Virtual(AbstractScreen):
     """No-op screen backend, used only when no ST7735/SSD1351 display
     hardware is present (or FPMS_DISPLAY=virtual).
 
-    Pages call render_text() to show their content as plain terminal text
-    (when stdout is a TTY), so the menu is readable live over SSH. The
+    The panel calls render_text() to show each screen as plain terminal
+    text (when stdout is a TTY), so the menu is readable live over SSH. The
     -e emulator's 'g' key still captures full 128x128 PNG screenshots.
     On a machine with a real display this backend is never selected, so
     the terminal text view is not available there.
+
+    The last frame drawn is kept (last_image, frames, asleep) so headless
+    tests can assert on what a real panel would show.
     """
 
     def __init__(self):
         self.hints = []
         self._last = None
+        self.last_image = None
+        self.frames = 0
+        self.asleep = False
 
     def init(self):
         return True
 
     def drawImage(self, image):
-        pass
+        self.last_image = image.copy()
+        self.frames += 1
 
     def set_hints(self, hints):
         self.hints = list(hints)
@@ -53,7 +60,7 @@ class Virtual(AbstractScreen):
         pass
 
     def sleep(self):
-        pass
+        self.asleep = True
 
     def wakeup(self):
-        pass
+        self.asleep = False

@@ -12,8 +12,6 @@ from fpms.modules.platform import PLATFORM_PRO
 
 WLANPI_MODEL_FILE = "/etc/wlanpi-model"
 
-WLANPI_IMAGE_FILE = "/etc/wlanpi-release"
-
 env_util = EnvUtils()
 PLATFORM = env_util.get_platform(WLANPI_MODEL_FILE)
 DISPLAY_TYPE = env_util.get_display_type(PLATFORM)
@@ -22,64 +20,29 @@ GPIO_CHIP = env_util.get_gpiochip()
 DISPLAY_ORIENTATION_NORMAL = "normal"
 DISPLAY_ORIENTATION_FLIPPED = "flipped"
 
-IMAGE_DIR = "images/128x128"
-MAX_TABLE_LINES = 9
-MAX_PAGE_LINES = 8
-DISPLAY_MODE = "RGB"
-
-PAGE_SLEEP = 300
-PAGE_WIDTH = 128
-PAGE_HEIGHT = 128
-NAV_BAR_TOP = PAGE_HEIGHT - 10
-STATUS_BAR_HEIGHT = 16
-SYSTEM_BAR_HEIGHT = 15
-
 SCRIPT_PATH = str(pathlib.Path(__file__).parent.parent.absolute())
 
-os.chdir(SCRIPT_PATH)
+IMAGE_DIR = os.path.join(SCRIPT_PATH, "images", "128x128")
+FONT_DIR = os.path.join(SCRIPT_PATH, "fonts")
+DISPLAY_MODE = "RGB"
 
-TINY_FONT = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 7)
-SMART_FONT = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 10)
-FONT10 = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 10)
-FONT11 = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 11)
-FONT12 = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 12)
-FONT13 = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 13)
-FONT14 = ImageFont.truetype("fonts/DejaVuSansMono.ttf", 14)
-FONTB10 = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 10)
-FONTB11 = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 11)
-FONTB12 = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 12)
-FONTB13 = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 13)
-FONTB14 = ImageFont.truetype("fonts/DejaVuSansMono-Bold.ttf", 14)
-ICONS = ImageFont.truetype("fonts/ionicons.ttf", 13)
+# Seconds without a button press before the screen is put to sleep.
+PAGE_SLEEP_SEC = 600
+PAGE_WIDTH = 128
+PAGE_HEIGHT = 128
+
+# wlanpi-menud's socket for local surfaces (kernel peer credentials, no auth).
+MENUD_SOCKET = "/run/wlanpi-menud/local.sock"
 
 
-IFCONFIG_FILE = "/sbin/ifconfig"
-IW_FILE = "/sbin/iw"
-IP_FILE = "/usr/sbin/ip"
-UFW_FILE = "/usr/sbin/ufw"
-ETHTOOL_FILE = "/sbin/ethtool"
-
-MODE_FILE = "/etc/wlanpi-state"
-HOTSPOT_SWITCHER_FILE = "/opt/wlanpi-hotspot/hotspot_switcher"
-
-REG_DOMAIN_FILE = "/usr/bin/wlanpi-reg-domain"
-TIME_ZONE_FILE = "/usr/bin/wlanpi-timezone"
-BT_ADAPTER_FILE = "/usr/bin/wlanpi-bt-adapter"
+def _font(name, size):
+    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
 
 
-# Networkinfo data file names. wlanpi-common's networkinfo scripts write these
-# into their root-owned runtime directory (systemd
-# RuntimeDirectory=wlanpi-networkinfo), not the shared /tmp, so this service
-# must run as root to read them.
-LLDPNEIGH_FILE = "/run/wlanpi-networkinfo/lldpneigh.txt"
-CDPNEIGH_FILE = "/run/wlanpi-networkinfo/cdpneigh.txt"
-IPCONFIG_FILE = "/opt/wlanpi-common/networkinfo/ipconfig.sh"
-REACHABILITY_FILE = "/opt/wlanpi-common/networkinfo/reachability.sh"
-PUBLICIP_CMD = "/opt/wlanpi-common/networkinfo/publicip.sh"
-PUBLICIP6_CMD = "/opt/wlanpi-common/networkinfo/publicip6.sh"
-BLINKER_FILE = "/opt/wlanpi-common/networkinfo/portblinker.sh"
-
-BATTERY_STATUS_FILE = "/sys/class/power_supply/bq27546-0/uevent"
+FONT9 = _font("DejaVuSansMono.ttf", 9)
+FONT10 = _font("DejaVuSansMono.ttf", 10)
+FONTB10 = _font("DejaVuSansMono-Bold.ttf", 10)
+FONTB11 = _font("DejaVuSansMono-Bold.ttf", 11)
 
 BUTTONS_WLANPI_PRO = {
     "up": 22,
@@ -99,8 +62,6 @@ BUTTONS_WAVESHARE = {
     "key2": 20,
     "key3": 16,
 }
-
-BUTTONS_SAPPHIRE = {"up": 26, "down": 22, "left": 4, "right": 27, "center": 17}
 
 BUTTONS_PINS = {}
 

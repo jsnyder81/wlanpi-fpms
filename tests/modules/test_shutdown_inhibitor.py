@@ -16,35 +16,18 @@ def shutdown_module(monkeypatch):
         "dbus.mainloop.glib",
         "gi",
         "gi.repository",
-        "gpiod",
-        "gpiod.line",
         "fpms.modules.wlanpi_oled",
-        "fpms.modules.apps.kismet",
-        "fpms.modules.apps.profiler",
-        "fpms.modules.apps.scanner",
-        "fpms.modules.battery",
-        "fpms.modules.bluetooth",
-        "fpms.modules.cloud_tests",
         "fpms.modules.constants",
-        "fpms.modules.env_utils",
-        "fpms.modules.nav.buttons",
-        "fpms.modules.network",
-        "fpms.modules.pages.homepage",
-        "fpms.modules.pages.page",
-        "fpms.modules.reg_domain",
-        "fpms.modules.system",
-        "fpms.modules.time_zone",
-        "fpms.modules.utils",
+        "fpms.modules.menud_client.panel",
+        "fpms.modules.nav",
+        "fpms.modules.sdnotify",
     )
     modules = {name: types.ModuleType(name) for name in module_names}
     for name, module in modules.items():
         if name.startswith("fpms."):
             module.__getattr__ = lambda attr: Mock()
         monkeypatch.setitem(sys.modules, name, module)
-    modules["gpiod.line"].Bias = Mock()
-    modules["gpiod.line"].Edge = Mock()
     modules["fpms.modules.constants"].DISPLAY_ORIENTATION_NORMAL = 0
-    modules["fpms.modules.constants"].PAGE_SLEEP = 10
     modules["dbus"].mainloop = modules["dbus.mainloop"]
     modules["dbus.mainloop"].glib = modules["dbus.mainloop.glib"]
     modules["dbus.mainloop.glib"].DBusGMainLoop = Mock()

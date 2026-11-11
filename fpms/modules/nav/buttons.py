@@ -1,158 +1,125 @@
-import types
+"""Physical button input: GPIO edges and the -e keyboard emulation.
 
-from fpms.modules.pages.homepage import HomePage
-from fpms.modules.pages.page import Page
+Buttons carry no menu logic. Each press becomes one of the protocol's key
+names (up, down, left, right, center, key1 to key3) and is handed to a
+callback; wlanpi-menud owns the cursor.
+
+FPMS conventions kept here: a button acts on press (falling edge), there is
+no long-press, left is back, and a flipped display swaps the directions and
+key1 with key3 so the buttons still match what is on screen.
+"""
+
+import sys
+import termios
+import tty
+from datetime import timedelta
+
+from fpms.modules.constants import DISPLAY_ORIENTATION_FLIPPED
+
+FLIPPED_KEYS = {
+    "up": "down",
+    "down": "up",
+    "left": "right",
+    "right": "left",
+    "key1": "key3",
+    "key3": "key1",
+}
+
+# Keyboard emulation (-e): numeric keypad or letters.
+EMULATED_KEYS = {
+    "8": "up",
+    "w": "up",
+    "2": "down",
+    "x": "down",
+    "4": "left",
+    "a": "left",
+    "6": "right",
+    "d": "right",
+    "5": "center",
+    "s": "center",
+    "*": "key1",
+    "i": "key1",
+    "-": "key2",
+    "o": "key2",
+    "+": "key3",
+    "p": "key3",
+}
+EMULATED_QUIT = "k"
+EMULATED_SCREENSHOT = "g"
 
 
-class Button:
-    def __init__(self, g_vars, menu):
-        self.homepage_obj = HomePage(g_vars)
-        self.page_obj = Page(g_vars)
+def oriented_key(key, orientation):
+    """The key a press means with the display in ``orientation``."""
+    if orientation == DISPLAY_ORIENTATION_FLIPPED:
+        return FLIPPED_KEYS.get(key, key)
+    return key
 
-    def _at_home_page(self, g_vars):
-        if (
-            g_vars["display_state"] == "page"
-            and len(g_vars["current_menu_location"]) == 1
-        ):
-            return True
-        else:
-            return False
 
-    def _bottom_of_list(self, current_location, menu):
-        menu_selection = menu
-        leaf = current_location[-1]
-        branch = current_location[0:-1]
+def request_buttons(gpio_chip, pins):
+    """Claim the button lines. Raises OSError when another process holds them."""
+    import gpiod
+    from gpiod.line import Bias, Edge
 
-        for choice in branch:
-            menu_selection = menu_selection[choice]["action"]
+    line_setting = gpiod.LineSettings(
+        bias=Bias.PULL_UP,
+        edge_detection=Edge.FALLING,
+        debounce_period=timedelta(microseconds=10),
+    )
+    return gpiod.request_lines(gpio_chip, dict.fromkeys(pins.values(), line_setting))
 
-        try:
-            if menu_selection[(leaf + 1)]:
-                return False
-        except IndexError:
-            return True
 
-        return True
+def monitor_buttons(request, pins, get_orientation, on_key):
+    """Block reading edge events; call ``on_key(name)`` for every press."""
+    names = {offset: name for name, offset in pins.items()}
+    with request:
+        while True:
+            request.wait_edge_events(1)
+            for event in request.read_edge_events():
+                name = names.get(event.line_offset)
+                if name is not None:
+                    on_key(oriented_key(name, get_orientation()))
 
-    def _length_of_list(self, current_location, menu):
-        menu_selection = menu
-        branch = current_location[0:-1]
 
-        for choice in branch:
-            menu_selection = menu_selection[choice]["action"]
+def emulated_key(char, pins):
+    """Protocol key for a typed character, or None. Keys the device lacks are ignored."""
+    key = EMULATED_KEYS.get(char.lower())
+    return key if key in pins else None
 
-        try:
-            return len(menu_selection)
-        except IndexError:
-            return 0
 
-        return 0
+def emulation_hints(pins):
+    hints = ["w/x/a/d/s: up/down/left/right/center", "g: screenshot   k: quit"]
+    if all(k in pins for k in ("key1", "key2", "key3")):
+        hints.append("i/o/p: key1/key2/key3")
+    return hints
 
-    def _display_top_menu(self, g_vars, menu):
-        g_vars["display_state"] = "menu"
-        return self.page_obj.draw_page(g_vars, menu)
 
-    def menu_down(self, g_vars, menu):
-        if self._at_home_page(g_vars):
-            return self._display_top_menu(g_vars, menu)
+def getch(stream=None):
+    """One character from the terminal, unbuffered. Empty string at end of input."""
+    stream = stream or sys.stdin
+    fd = stream.fileno()
+    try:
+        old_settings = termios.tcgetattr(fd)
+    except termios.error:
+        return stream.read(1)  # not a terminal (a pipe in tests)
+    try:
+        tty.setraw(fd)
+        return stream.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-        if g_vars["display_state"] == "page":
-            if g_vars["current_scroll_selection"] < (g_vars["table_pages"] - 1):
-                g_vars["current_scroll_selection"] += 1
-                g_vars["option_selected"]()
-                return
 
-        if g_vars["display_state"] != "menu":
+def emulate_buttons(pins, on_key, on_screenshot, on_quit, read=getch):
+    """Read the keyboard until quit (k) or end of input, emulating the buttons."""
+    while True:
+        char = read()
+        if not char:
+            return  # end of input: nothing left to emulate, keep the panel up
+        if char.lower() == EMULATED_QUIT:
+            on_quit()
             return
-
-        is_last = self._bottom_of_list(g_vars["current_menu_location"], menu)
-        current_selection = g_vars["current_menu_location"].pop()
-        current_selection = 0 if is_last else current_selection + 1
-        g_vars["current_menu_location"].append(current_selection)
-
-        self.page_obj.draw_page(g_vars, menu)
-
-    def menu_up(self, g_vars, menu):
-        if self._at_home_page(g_vars):
-            return self._display_top_menu(g_vars, menu)
-
-        if g_vars["display_state"] == "page" and g_vars["current_scroll_selection"] > 0:
-            g_vars["current_scroll_selection"] -= 1
-            g_vars["option_selected"]()
-            return
-
-        if g_vars["display_state"] != "menu":
-            return
-
-        index_last_item = (
-            self._length_of_list(g_vars["current_menu_location"], menu) - 1
-        )
-        current_selection = g_vars["current_menu_location"].pop()
-        if current_selection == 0:
-            current_selection = index_last_item
-        else:
-            current_selection = current_selection - 1
-        g_vars["current_menu_location"].append(current_selection)
-
-        self.page_obj.draw_page(g_vars, menu)
-
-    def menu_right(self, g_vars, menu):
-        if self._at_home_page(g_vars):
-            return self._display_top_menu(g_vars, menu)
-
-        if type(g_vars["option_selected"]) is list:
-            g_vars["current_menu_location"].append(0)
-            self.page_obj.draw_page(g_vars, menu)
-
-    def menu_left(self, g_vars, menu):
-        if g_vars["display_state"] == "page":
-            g_vars["current_scroll_selection"] = 0
-            g_vars["table_list_length"] = 0
-            g_vars["display_state"] = "menu"
-            g_vars["result_cache"] = False
-            g_vars["scan_file"] = ""
-            g_vars["ufw_info"] = None
-            self.page_obj.draw_page(g_vars, menu)
-            return
-
-        if g_vars["display_state"] == "menu":
-            if len(g_vars["current_menu_location"]) == 1:
-                g_vars["start_up"] = True
-                g_vars["current_menu_location"] = [0]
-                self.homepage_obj.home_page(g_vars, menu)
-            else:
-                g_vars["current_menu_location"].pop()
-                self.page_obj.draw_page(g_vars, menu)
-        else:
-            g_vars["display_state"] = "menu"
-            self.page_obj.draw_page(g_vars, menu)
-
-    def menu_center(self, g_vars, menu):
-        if self._at_home_page(g_vars):
-            g_vars["home_page_alternate"] = not g_vars["home_page_alternate"]
-            self.homepage_obj.home_page(g_vars, menu)
-        else:
-            if type(g_vars["option_selected"]) is list:
-                g_vars["current_menu_location"].append(0)
-                self.page_obj.draw_page(g_vars, menu)
-            elif isinstance(g_vars["option_selected"], types.FunctionType):
-                g_vars["display_state"] = "page"
-                g_vars["option_selected"]()
-
-    def shortcut(self, g_vars, menu, shortcut):
-        g_vars["result_cache"] = False
-        g_vars["ufw_info"] = None
-
-        if len(shortcut) == 0:
-            return
-
-        if isinstance(shortcut[-1], types.FunctionType):
-            g_vars["current_menu_location"] = shortcut[:-1]
-            g_vars["display_state"] = "page"
-            g_vars["option_selected"] = shortcut[-1]
-            g_vars["option_selected"]()
-        else:
-            g_vars["current_menu_location"] = shortcut
-            g_vars["current_menu_location"].append(0)
-            g_vars["display_state"] = "menu"
-            self.page_obj.draw_page(g_vars, menu)
+        if char.lower() == EMULATED_SCREENSHOT:
+            on_screenshot()
+            continue
+        key = emulated_key(char, pins)
+        if key is not None:
+            on_key(key)

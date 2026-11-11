@@ -1,6 +1,6 @@
 import socket
 
-from fpms.modules.utils import sd_notify_ready
+from fpms.modules.sdnotify import sd_notify_ready
 
 
 def test_sd_notify_ready_sends_ready(tmp_path, monkeypatch):

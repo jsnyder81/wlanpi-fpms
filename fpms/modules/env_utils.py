@@ -1,18 +1,11 @@
 """
-
-A set of utilities that query vary aspects of the environment in which
-FPMS is running. These will be replcaed by back-end API calls in the
-longer term
+Hardware facts the panel needs before it can draw: the WLAN Pi model, the
+display that model carries and the gpiochip behind the 40-pin header.
 """
 
 import glob
-import hashlib
 import os
 import subprocess
-import sys
-
-import qrcode
-from PIL import Image
 
 from fpms.modules.display import DISPLAY_TYPE_SSD1351, DISPLAY_TYPE_ST7735
 from fpms.modules.platform import HEADER_GPIOCHIP_LABELS, PLATFORM_PRO, PLATFORM_UNKNOWN
@@ -82,131 +75,3 @@ class EnvUtils:
             return DISPLAY_TYPE_SSD1351
         else:
             return DISPLAY_TYPE_ST7735
-
-    def get_mode(self, MODE_FILE):
-        valid_modes = ["classic", "hotspot", "wiperf", "server", "bridge"]
-
-        if os.path.isfile(MODE_FILE):
-            with open(MODE_FILE) as f:
-                current_mode = f.readline().strip()
-
-            if current_mode not in valid_modes:
-                print(
-                    f"The mode read from {MODE_FILE} is not a valid mode of operation: {current_mode}"
-                )
-                sys.exit()
-        else:
-            with open(MODE_FILE, "w") as f:
-                current_mode = "classic"
-                f.write(current_mode)
-
-        return current_mode
-
-    def get_image_ver(self, WLANPI_IMAGE_FILE):
-        wlanpi_ver = "unknown"
-
-        if os.path.isfile(WLANPI_IMAGE_FILE):
-            with open(WLANPI_IMAGE_FILE) as f:
-                lines = f.readlines()
-
-            for line in lines:
-                (name, value) = line.split("=")
-                if name == "VERSION":
-                    wlanpi_ver = value.strip()
-                    break
-
-        return wlanpi_ver
-
-    def get_hostname(self):
-        try:
-            hostname = subprocess.check_output(["/usr/bin/hostname"]).decode().strip()
-            if "." not in hostname:
-                domain = "local"
-                try:
-                    output = (
-                        subprocess.check_output(["/usr/bin/hostname", "-d"])
-                        .decode()
-                        .strip()
-                    )
-                    if len(output) != 0:
-                        domain = output
-                except Exception:
-                    pass
-                hostname = f"{hostname}.{domain}"
-            return hostname
-        except Exception:
-            pass
-
-        return None
-
-    def get_wifi_qrcode_for_hostapd(self):
-        """
-        Generates and returns the path to a WiFi QR code for the current Hostapd config.
-        """
-        cmd = (
-            "grep -E '^ssid|^wpa_passphrase' /etc/hostapd/hostapd.conf | cut -d '=' -f2"
-        )
-
-        try:
-            ssid, passphrase = (
-                subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL)
-                .decode()
-                .strip()
-                .split("\n")
-            )
-            return self.get_wifi_qrcode(ssid, passphrase)
-
-        except Exception as e:
-            print(e)
-            pass
-
-        return None
-
-    def get_wifi_qrcode(self, ssid, passphrase):
-        qrcode_spec = f"WIFI:S:{ssid};T:WPA;P:{passphrase};;"
-        qrcode_hash = hashlib.sha256(qrcode_spec.encode()).hexdigest()
-        qrcode_path = f"/tmp/{qrcode_hash}.png"
-
-        if not os.path.exists(qrcode_path):
-            qr = qrcode.QRCode(
-                box_size=2, border=2, error_correction=qrcode.constants.ERROR_CORRECT_M
-            )
-            qr.add_data(qrcode_spec)
-            qr.make(fit=True)
-            qr.make_image().save(qrcode_path)
-
-        return qrcode_path
-
-    def get_help_qrcode(self, watermark=""):
-        qrcode_spec = "http://userguide.wlanpi.com/"
-        qrcode_hash = hashlib.sha256(qrcode_spec.encode()).hexdigest()
-        qrcode_path = f"/tmp/{qrcode_hash}.png"
-
-        if not os.path.exists(qrcode_path):
-            qr = qrcode.QRCode(
-                box_size=2, border=2, error_correction=qrcode.constants.ERROR_CORRECT_M
-            )
-            qr.add_data(qrcode_spec)
-            qr.make(fit=True)
-            img = qr.make_image()
-
-            if os.path.exists(watermark):
-                wmark = Image.open(watermark)
-
-                if wmark is not None:
-                    img = img.convert("RGB")
-
-                    qr_width, qr_height = img.size
-                    max_size = min(qr_width, qr_height) // 5
-                    wmark_img = wmark.resize((max_size, max_size))
-                    wmark_width, wmark_height = wmark_img.size
-
-                    position = (
-                        (qr_width - wmark_width) // 2,
-                        (qr_height - wmark_height) // 2,
-                    )
-                    img.paste(wmark_img, position)
-
-            img.save(qrcode_path)
-
-        return qrcode_path
