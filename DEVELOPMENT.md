@@ -34,7 +34,7 @@ pip install -U pip setuptools wheel pip-tools
 pip install -e .[testing]
 ```
 
-The `testing` extras install tools like black, mypy, tox, pytest, etc.
+The `testing` extras install tools like ruff, mypy, pytest, etc.
 
 ## Executing the wlanpi-fpms module
 
@@ -59,6 +59,35 @@ sudo venv/bin/python3 -m fpms -e
 ```
 
 Further reading on executing modules with Python at <https://docs.python.org/3/library/runpy.html>.
+
+## Running without a WLAN Pi
+
+The panel is a client of `wlanpi-menud`, so development needs a menu service to talk to. `wlanpi-menud` ships one that runs on a fake `wlanpi-core`, with no device and no root for the service itself:
+
+```
+# in a wlanpi-menud checkout
+.venv/bin/python demo/serve_fake.py /tmp/menud-dev
+```
+
+Then point fpms at that socket. With no SPI display present it uses the virtual screen, which prints each screen as text; `g` saves a PNG of the 128x128 frame.
+
+```
+sudo FPMS_MENUD_SOCKET=/tmp/menud-dev/local.sock FPMS_DISPLAY=virtual venv/bin/python3 -m fpms -e
+```
+
+Stop the fake service and the panel switches to the "Menu unavailable" screen with the machine's IP addresses; start it again and it reattaches.
+
+## Tests
+
+```
+tox -e py313        # or: python -m pytest
+tox -e lint
+tox -e formatcheck
+```
+
+`tests/menud_client/` runs the panel headless: a scripted fake `wlanpi-menud` on a Unix socket (`fake_menud.py`, every frame checked against the vendored `frames.schema.json`) and the virtual screen, so tests assert on both the frames exchanged and the pixels drawn. Set `FPMS_MENUD_TRANSCRIPT=/path/file` to save the frame transcript of each test. `test_live_menud.py` runs against the real service when a `wlanpi-menud` checkout with a `.venv` sits next to this repo, and is skipped otherwise.
+
+When `frames.schema.json` changes in `wlanpi-menud`, copy it to `tests/menud_client/fixtures/`; `test_protocol.py` fails while the two differ.
 
 ## Cheatsheat
 
