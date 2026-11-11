@@ -1,10 +1,8 @@
 gpiod
-gpiozero
 luma.oled
 luma.lcd
-textfsm
-tzupdate
 Pillow
 qrcode
 rpi-gpio
 spidev
+websockets

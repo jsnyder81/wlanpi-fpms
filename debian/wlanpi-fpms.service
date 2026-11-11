@@ -1,6 +1,10 @@
 [Unit]
 Description=Front Panel Menu System for the WLAN Pi OLED display
 RequiresMountsFor=/dev/spidev
+# The menu is served by wlanpi-menud. Wants, not Requires, and no After: the
+# panel starts on its own, shows the device's IP address while the menu
+# service is down or still starting, and attaches when it is up.
+Wants=wlanpi-menud.service
 OnFailure=wlanpi-fpms-failed.service
 
 [Service]
