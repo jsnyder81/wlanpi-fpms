@@ -312,12 +312,16 @@ class Panel:
                 shown["blocks"] = result.get("blocks", [])
                 if result.get("title"):
                     shown["title"] = result["title"]
+            comps = (
+                client.topic("complications") if view.get("screen") == "home" else None
+            )
             frame = render.render(
                 shown,
                 scroll=self.scroll,
                 notice=client.notice,
                 badge=self._badge(view.get("screen")),
                 tick=self._tick,
+                complications=comps or None,
             )
         self.max_scroll = frame.max_scroll
         if self._scroll_to_end and frame.max_scroll:

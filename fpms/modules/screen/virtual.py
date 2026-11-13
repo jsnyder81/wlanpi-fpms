@@ -64,3 +64,11 @@ class Virtual(AbstractScreen):
 
     def wakeup(self):
         self.asleep = False
+
+    def to_ascii(self) -> str:
+        """Return the last drawn frame as an ASCII-art string snapshot."""
+        if self.last_image is not None:
+            from fpms.modules.menud_client.render import image_to_ascii
+
+            return image_to_ascii(self.last_image)
+        return ""

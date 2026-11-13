@@ -114,7 +114,7 @@ def test_navigate_run_and_confirm_against_the_real_service(menud_socket):
             await press("left", "menu", "system.shutdown")
             await press("left", "menu", "system")
             lines = await press("left", "home")
-            assert lines[0].startswith("Host:")
+            assert lines[0].startswith(("Host:", "Mode:"))
             assert screen.last_image.tobytes() == panel.last_frame.image.tobytes()
         finally:
             panel.stop()
