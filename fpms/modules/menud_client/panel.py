@@ -322,12 +322,15 @@ class Panel:
                     )[: complications.STRIP_MAX_SLOTS]
                 else:
                     comps = client.topic("complications")
+            summary = client.topic("device.summary")
+            mode = summary.get("mode") if isinstance(summary, dict) else None
             frame = render.render(
                 shown,
                 scroll=self.scroll,
                 notice=client.notice,
                 badge=self._badge(view.get("screen")),
                 tick=self._tick,
+                mode=mode,
                 complications=comps or None,
             )
         self.max_scroll = frame.max_scroll

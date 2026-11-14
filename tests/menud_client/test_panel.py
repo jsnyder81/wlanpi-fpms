@@ -610,6 +610,56 @@ def test_jobs_topic_badge_and_stale_gap(rig_factory):
     run(scenario())
 
 
+def test_device_summary_mode_passed_to_render_and_drawn(rig_factory, monkeypatch):
+    """The mode in device.summary must be passed through panel.py's compose/render path onto the screen."""
+    rendered_modes: list[str | None] = []
+    orig_render = render.render
+
+    def spy_render(view, **kwargs):
+        rendered_modes.append(kwargs.get("mode"))
+        return orig_render(view, **kwargs)
+
+    monkeypatch.setattr(render, "render", spy_render)
+
+    async def scenario():
+        async with rig_factory() as rig:
+            await rig.connected()
+            client = rig.panel.client
+            await until(
+                lambda: "device.summary" in client.topic_seq,
+                what="device.summary snapshot",
+            )
+            await rig.drawn()
+
+            # Verify panel.py passed mode="classic" to render.render
+            assert "classic" in rendered_modes
+            assert rendered_modes[-1] == "classic"
+
+            # Verify the header mode indicator on the actual virtual screen
+            ascii_lines = rig.screen.to_ascii().splitlines()
+            mode_indicator_pattern = "▀▀▀██▀██████▀▀███▀▀▀███▀▀▀███▀▀▀▀███▀▀▀███|"
+            assert mode_indicator_pattern in ascii_lines[3]
+
+            # Updating device.summary publishes new mode, which re-renders with new mode
+            await rig.server.publish(
+                "device.summary",
+                {"hostname": "wlanpi-test", "ip": "192.0.2.10", "mode": "hotspot"},
+            )
+            await until(
+                lambda: (client.topic("device.summary") or {}).get("mode") == "hotspot",
+                what="device.summary update",
+            )
+            await rig.drawn()
+            assert rendered_modes[-1] == "hotspot"
+            ascii_lines_hotspot = rig.screen.to_ascii().splitlines()
+            assert ascii_lines_hotspot[3] != ascii_lines[3]
+            assert (
+                "███████████████████████████████████████|" not in ascii_lines_hotspot[3]
+            )
+
+    run(scenario())
+
+
 # ---------------------------------------------------------------------- paging
 
 

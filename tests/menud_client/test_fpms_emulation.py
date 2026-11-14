@@ -88,7 +88,7 @@ def test_emulated_buttons_drive_the_menu_service(
                 screen = module.oled.device
                 # After the splash, the service's home view is on the screen,
                 # drawn through wlanpi_oled.
-                home = render.render(HOME_VIEW).image.tobytes()
+                home = render.render(HOME_VIEW, mode="classic").image.tobytes()
                 await until(
                     lambda: screen.last_image.tobytes() == home, what="home view drawn"
                 )
