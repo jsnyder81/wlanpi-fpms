@@ -70,13 +70,24 @@ def schema_errors(frame: dict[str, Any]) -> list[str]:
 
 
 class FakeMenud:
-    def __init__(self, path: str, *, epoch: str = "epochAAAA0001"):
+    def __init__(
+        self,
+        path: str,
+        *,
+        epoch: str = "epochAAAA0001",
+        features: list[str] | None = None,
+    ):
         self.path = path
         self.epoch = epoch
+        self.features = features
         self.session_id = "Sdefault0001"
         self.menu_revision = 1
         self.view: dict[str, Any] = dict(HOME_VIEW)
         self.topic_data = dict(TOPIC_DATA.items())
+        if self.features and "complications.2" in self.features:
+            self.topic_data.setdefault("complications.live", [])
+            self.topic_data.setdefault("complications.catalog", [])
+            self.topic_data.setdefault("complications.config", {"surfaces": {}})
         self.seq = dict.fromkeys(self.topic_data, 1)
         self.pending_prompts: list[dict[str, Any]] = []
         self.script: Script | None = None
@@ -247,20 +258,23 @@ class FakeMenud:
         resumed = same and all(self.seq.get(t) == n for t, n in seqs.items())
         if same:
             self.subscriptions[ws] = set(seqs)
+        welcome_msg: dict[str, Any] = {
+            "type": "welcome",
+            "session_id": self.session_id,
+            "session": "default",
+            "epoch": self.epoch,
+            "principal": {"kind": "local", "name": "root", "uid": 0},
+            "roles": ["admin"],
+            "version": 1,
+            "mode": "thin",
+            "resumed": resumed,
+            "limits": {"queue_frames": 64, "max_frame_bytes": 262144},
+        }
+        if self.features is not None:
+            welcome_msg["features"] = list(self.features)
         await self._send(
             ws,
-            {
-                "type": "welcome",
-                "session_id": self.session_id,
-                "session": "default",
-                "epoch": self.epoch,
-                "principal": {"kind": "local", "name": "root", "uid": 0},
-                "roles": ["admin"],
-                "version": 1,
-                "mode": "thin",
-                "resumed": resumed,
-                "limits": {"queue_frames": 64, "max_frame_bytes": 262144},
-            },
+            welcome_msg,
             mid,
         )
         if not resumed or resume.get("menu_revision") != self.menu_revision:

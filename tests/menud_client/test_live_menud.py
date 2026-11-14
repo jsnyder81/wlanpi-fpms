@@ -81,7 +81,7 @@ def test_navigate_run_and_confirm_against_the_real_service(menud_socket):
             assert client.resumed is False
             assert client.roles == ["admin"]
             assert client.view["screen"] == "home"
-            await until(lambda: len(client.topic_seq) == 4, what="topic snapshots")
+            await until(lambda: len(client.topic_seq) in (4, 7), what="topic snapshots")
 
             lines = await press("down", "menu", "network")
             assert lines[0] == "> Network >"
@@ -114,7 +114,9 @@ def test_navigate_run_and_confirm_against_the_real_service(menud_socket):
             await press("left", "menu", "system.shutdown")
             await press("left", "menu", "system")
             lines = await press("left", "home")
-            assert lines[0].startswith(("Host:", "Mode:"))
+            assert lines[0].startswith(("Host:", "Mode:")) or lines[1].startswith(
+                ("Host:", "Mode:")
+            )
             assert screen.last_image.tobytes() == panel.last_frame.image.tobytes()
         finally:
             panel.stop()
@@ -137,7 +139,8 @@ def test_reconnect_resumes_against_the_real_service(menud_socket):
         client = panel.client
         try:
             await until(
-                lambda: client.connected and len(client.topic_seq) == 4, what="attach"
+                lambda: client.connected and len(client.topic_seq) in (4, 7),
+                what="attach",
             )
             epoch, session = client.epoch, client.session_id
             await panel.handle_key("down")

@@ -10,6 +10,8 @@ CLIENT_NAME = "wlanpi-fpms"
 BLOCK_TYPES = ["text", "kv", "table", "list", "qr", "status", "progress", "confirm"]
 KEYS = ["up", "down", "left", "right", "center", "key1", "key2", "key3"]
 TOPICS = ["device.summary", "complications", "alerts", "jobs"]
+FEATURE_COMPLICATIONS = "complications.2"
+NEW_TOPICS = ["complications.live", "complications.catalog", "complications.config"]
 
 # After these the same hello would be refused again. The panel still retries
 # (a package upgrade on either side fixes it) but at the slowest rate.

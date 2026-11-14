@@ -64,6 +64,7 @@ class MenudClient:
         self.session_id: str | None = None
         self.principal: dict[str, Any] | None = None
         self.roles: list[str] = []
+        self.features: list[str] = []
         self.resumed: bool | None = None
         self.menu_revision: int | None = None
         self.device_mode: str | None = None
@@ -104,6 +105,10 @@ class MenudClient:
 
     def clear_notice(self) -> None:
         self._notice = None
+
+    def has_feature(self, feature: str) -> bool:
+        """Whether the server announced support for this protocol feature."""
+        return feature in self.features
 
     def topic(self, name: str) -> Any:
         """Current data for a topic, or None while it is unknown or stale."""
@@ -299,10 +304,16 @@ class MenudClient:
         self.session_id = frame.get("session_id")
         self.principal = frame.get("principal")
         self.roles = list(frame.get("roles", []))
+        self.features = [str(f) for f in frame.get("features", [])]
         self.resumed = bool(frame.get("resumed", False))
         self.connected = True
         self.failures = 0
         self.last_failure = None
+        # Add additive topics when advertised by welcome.features (§5.1)
+        if protocol.FEATURE_COMPLICATIONS in self.features:
+            for t in protocol.NEW_TOPICS:
+                if t not in self.topics:
+                    self.topics.append(t)
         # Topics listed in resume.seq are subscribed again by the service
         # (snapshots follow when not resumed). Anything else is asked for.
         carried = set((resume or {}).get("seq", {}))

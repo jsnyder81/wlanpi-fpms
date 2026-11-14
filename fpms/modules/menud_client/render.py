@@ -34,6 +34,7 @@ from fpms.modules.constants import (
 )
 from fpms.modules.themes import THEME
 
+from . import complications as complications_mod
 from . import glyphs, qr
 
 TITLE_H = 15
@@ -184,6 +185,10 @@ def _text(body: _Body, b: dict[str, Any]) -> None:
 def _kv(body: _Body, b: dict[str, Any]) -> None:
     for item in b.get("items", []):
         key, value = str(item.get("key", "")), _cell(item.get("value"))
+        level = item.get("level")
+        val_fill = (
+            LEVEL_COLOURS.get(level, _c("text_color")) if level else _c("text_color")
+        )
         body.lines.append(f"{key}: {value}")
         if len(key) + 2 + len(value) <= COLS:
             # Key and value on one row, with dotted leaders connecting them.
@@ -193,6 +198,7 @@ def _kv(body: _Body, b: dict[str, Any]) -> None:
                 y: int,
                 key: str = key,
                 value: str = value,
+                val_fill: Any = val_fill,
             ) -> None:
                 key_text = f"{key}:"
                 d.text((2, y), key_text, font=FONT10, fill=_c("text_secondary_color"))
@@ -202,7 +208,7 @@ def _kv(body: _Body, b: dict[str, Any]) -> None:
                     (vx, y),
                     value,
                     font=FONT10,
-                    fill=_c("text_color"),
+                    fill=val_fill,
                 )
                 # Dotted leader between key and value when long enough
                 if vx > kx + 8:
@@ -214,7 +220,7 @@ def _kv(body: _Body, b: dict[str, Any]) -> None:
             for line in wrap(f"{key}:", COLS - 1):
                 body.row(line, fill=_c("text_secondary_color"), x=2)
             for line in wrap(value, COLS - 2):
-                body.row(line, x=int(CHAR_W) + 2)
+                body.row(line, fill=val_fill, x=int(CHAR_W) + 2)
 
 
 def table_layout(
@@ -339,17 +345,27 @@ def _list(body: _Body, b: dict[str, Any]) -> None:
         )
         bg = _c("page_selected_item_background") if is_sel else None
         dim = fg if is_sel else _c("text_secondary_color")
+        is_rule = label.strip().startswith("- -") and label.strip().endswith("- -")
+        detail_tag = (
+            f"({detail})"
+            if detail in ("idle", "hidden")
+            else (str(detail) if detail is not None else None)
+        )
+        if detail == "hidden" and not is_sel:
+            fg = _c("text_secondary_color")
+
         start = body.height
         room = COLS - (3 if mark else 1) - (2 if is_sel else 0)
-        inline = detail is not None and len(label) + 1 + len(str(detail)) <= room
+        inline = detail_tag is not None and len(label) + 1 + len(detail_tag) <= room
 
         def draw_row(
             d: ImageDraw.ImageDraw,
             _img: Image.Image,
             y: int,
             label: str = label,
-            detail: Any = detail,
+            detail_tag: str | None = detail_tag,
             is_sel: bool = is_sel,
+            is_rule: bool = is_rule,
             mark: str | None = mark,
             inline: bool = inline,
             fg: Any = fg,
@@ -357,6 +373,12 @@ def _list(body: _Body, b: dict[str, Any]) -> None:
             dim: Any = dim,
             room: int = room,
         ) -> None:
+            if is_rule and not is_sel:
+                d_len = int(FONT10.getlength(label))
+                lx = (PAGE_WIDTH - d_len) // 2
+                d.text((lx, y), label, font=FONT10, fill=_c("text_secondary_color"))
+                return
+
             if is_sel:
                 # Inverted pill across row with 2px margins and arrow glyph
                 d.rounded_rectangle(
@@ -369,9 +391,9 @@ def _list(body: _Body, b: dict[str, Any]) -> None:
             else:
                 tx = 4
 
-            if inline and detail is not None:
+            if inline and detail_tag is not None:
                 d.text((tx, y), label, font=FONT10, fill=fg)
-                right_text = f"{detail}{' >' if mark else ''}"
+                right_text = f"{detail_tag}{' >' if mark else ''}"
                 rx = PAGE_WIDTH - 4 - FONT10.getlength(right_text)
                 d.text((rx, y), right_text, font=FONT10, fill=dim)
             else:
@@ -382,13 +404,13 @@ def _list(body: _Body, b: dict[str, Any]) -> None:
 
         body.add(ROW_H, draw_row)
 
-        if not inline and detail is not None:
+        if not inline and detail_tag is not None:
 
             def draw_sub(
                 d: ImageDraw.ImageDraw,
                 _img: Image.Image,
                 y: int,
-                detail: Any = detail,
+                detail_tag: str = detail_tag,
                 is_sel: bool = is_sel,
                 bg: Any = bg,
                 dim: Any = dim,
@@ -397,7 +419,7 @@ def _list(body: _Body, b: dict[str, Any]) -> None:
                     d.rectangle((2, y, PAGE_WIDTH - 3, y + ROW_H - 1), fill=bg)
                 d.text(
                     (int(CHAR_W * 2) + 2, y),
-                    clip(str(detail), COLS - 3),
+                    clip(detail_tag, COLS - 3),
                     font=FONT10,
                     fill=dim,
                 )
@@ -600,46 +622,52 @@ def _complications_row(
         )
         # Clock at left
         d.text((2, y + 1), clock_str, font=FONTB10, fill=_c("text_color"))
-        cx = 2 + int(FONTB10.getlength(clock_str)) + 6
 
-        # Draw complications that fit
-        for item in complications:
-            if cx + 18 > PAGE_WIDTH - 2:
-                break
-            app_id = str(item.get("app_id", ""))
-            icon_name = item.get("icon")
-            if not icon_name:
-                if "wifi" in app_id:
-                    icon_name = "wifi"
-                elif "blue" in app_id:
-                    icon_name = "bluetooth"
-                elif "bat" in app_id:
-                    icon_name = "battery"
-                elif "plug" in app_id or "pwr" in app_id:
-                    icon_name = "plug"
-                elif item.get("status") == "error":
-                    icon_name = "alert"
-                elif item.get("status") == "ok":
-                    icon_name = "dot_filled"
-                else:
-                    icon_name = "dot_hollow"
+        # Up to 3 slots
+        for i, item in enumerate(complications[:3]):
+            sx = 38 + i * 30
+            text = complications_mod.slot_text(item)
+            status = complications_mod.normalize_status(item.get("status"))
+            is_mono = THEME.__name__ == "BlackAndWhiteTheme"
 
-            status = item.get("status", "info")
-            fill = LEVEL_COLOURS.get(status, _c("text_color"))
-            glyphs.draw_glyph(d, cx, y + 2, icon_name, fill=fill, size=8)
-            cx += 10
-            val = str(item.get("value") or item.get("label") or "")
-            if val and cx + int(FONT9.getlength(val)) <= PAGE_WIDTH - 2:
-                d.text((cx, y + 1), val, font=FONT9, fill=fill)
-                cx += int(FONT9.getlength(val)) + 4
+            if status == "error":
+                t_w = int(FONT9.getlength(text)) if text else 8
+                box_w = max(t_w + 4, 12)
+                bg = (
+                    _c("page_selected_item_background")
+                    if is_mono
+                    else glyphs.STATUS_COLOURS["error"]
+                )
+                fg = _c("page_selected_item_foreground") if is_mono else "#ffffff"
+                d.rounded_rectangle(
+                    (sx - 2, y + 1, min(sx + box_w - 2, PAGE_WIDTH - 2), y + ROW_H - 2),
+                    radius=1,
+                    fill=bg,
+                )
+                if text:
+                    d.text((sx, y + 1), text, font=FONT9, fill=fg)
+                elif item.get("icon"):
+                    glyphs.draw_glyph(d, sx, y + 2, str(item["icon"]), fill=fg, size=8)
+            else:
+                fill = (
+                    _c("text_secondary_color")
+                    if status in ("off", "unknown")
+                    else (
+                        _c("text_color")
+                        if is_mono or status == "info"
+                        else glyphs.STATUS_COLOURS.get(status, _c("text_color"))
+                    )
+                )
+                if text:
+                    d.text((sx, y + 1), text, font=FONT9, fill=fill)
+                elif item.get("icon"):
+                    glyphs.draw_glyph(
+                        d, sx, y + 2, str(item["icon"]), fill=fill, size=8
+                    )
 
     body.add(ROW_H, draw)
-    parts = [clock_str]
-    for item in complications:
-        label = item.get("label") or item.get("app_id")
-        val = item.get("value")
-        parts.append(f"[{label}: {val}]" if val else f"[{label}]")
-    body.lines.append(" ".join(parts))
+    slot_texts = [complications_mod.slot_text(item) for item in complications[:3]]
+    body.lines.append(clip(f"{clock_str}  " + "  ".join(slot_texts).rstrip(), COLS))
 
 
 def _blocks(

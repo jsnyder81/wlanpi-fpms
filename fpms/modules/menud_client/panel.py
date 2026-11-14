@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from . import netinfo, protocol, render
+from . import complications, netinfo, protocol, render
 from .client import MenudClient
 from .editor import PromptEditor
 
@@ -312,9 +312,16 @@ class Panel:
                 shown["blocks"] = result.get("blocks", [])
                 if result.get("title"):
                     shown["title"] = result["title"]
-            comps = (
-                client.topic("complications") if view.get("screen") == "home" else None
-            )
+            comps = None
+            if view.get("screen") == "home":
+                if client.has_feature(complications.FEATURE):
+                    live = client.topic(complications.TOPIC_LIVE)
+                    config = client.topic(complications.TOPIC_CONFIG)
+                    comps = complications.resolved_tiles(
+                        live, config, profile=complications.PROFILE_STRIP
+                    )[: complications.STRIP_MAX_SLOTS]
+                else:
+                    comps = client.topic("complications")
             frame = render.render(
                 shown,
                 scroll=self.scroll,
